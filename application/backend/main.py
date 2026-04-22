@@ -1,275 +1,202 @@
+import os
+import joblib
+import pandas as pd
+import numpy as np
+import warnings
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
-import numpy as np
-import joblib
-import os
 from datetime import datetime
+from typing import Optional
+import traceback
 
-app = FastAPI(title="Agro Predictor API", version="1.0.0")
+warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
-# =========================
-# CORS Configuration
-# =========================
+# 1. Inisialisasi FastAPI
+app = FastAPI(
+    title="Agro-Environmental Predictor API",
+    description="API untuk memprediksi keberhasilan pertumbuhan tanaman",
+    version="2.0.0"
+)
+
+# 2. Konfigurasi CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Untuk development, batasi di production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# =========================
-# Config Path
-# =========================
-MODEL_PATH = "model/model.pkl"
+# 3. Manajemen Path Asset
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_DIR = os.path.join(BASE_DIR, "../../model")
+
+MODEL_PATH = os.path.join(MODEL_DIR, "model_final.pkl")
+SCALER_PATH = os.path.join(MODEL_DIR, "scaler.pkl")
+FEAT_PATH = os.path.join(MODEL_DIR, "feature_names.pkl")
+
+# 4. Global Variables
 model = None
+scaler = None
+feature_names = None
 
-# =========================
-# Load Model
-# =========================
-def load_model():
-    global model
+# 5. Load Asset saat Startup
+@app.on_event("startup")
+def startup_event():
+    global model, scaler, feature_names
     try:
-        if os.path.exists(MODEL_PATH):
-            model = joblib.load(MODEL_PATH)
-            print(f"✅ Model loaded successfully from {MODEL_PATH}")
-        else:
-            print(f"⚠️ Model not found at {MODEL_PATH}, using dummy model")
-            model = None
+        if not os.path.exists(MODEL_PATH):
+            print(f"❌ ERROR: Model tidak ditemukan di {MODEL_PATH}")
+            return
+        
+        model = joblib.load(MODEL_PATH)
+        scaler = joblib.load(SCALER_PATH)
+        feature_names = joblib.load(FEAT_PATH)
+        
+        print("=" * 50)
+        print("✅ BACKEND ASSETS LOADED")
+        print(f"📦 Model: {type(model).__name__}")
+        print(f"🔢 Total Features: {len(feature_names)}")
+        
+        # Cek class labels model
+        if hasattr(model, "classes_"):
+            print(f"🏷️ Model Classes: {model.classes_}")
+            print(f"   (0={model.classes_[0]}, 1={model.classes_[1]})")
+            
+            # Auto-detect: Jika class 1 adalah label positif (Tumbuh)
+            if model.classes_[1] == 1:
+                print("✅ Interpretasi: 1 = Tumbuh, 0 = Gagal")
+            else:
+                print("⚠️ Interpretasi: 1 = Gagal, 0 = Tumbuh")
+        print("=" * 50)
+        
     except Exception as e:
-        print(f"❌ Error loading model: {e}")
-        model = None
+        print(f"❌ GAGAL MEMUAT ASSET: {str(e)}")
+        traceback.print_exc()
 
-# Load model saat startup
-load_model()
+# 6. Skema Input Request
+class PredictRequest(BaseModel):
+    bulk_density: float = Field(..., description="Bulk Density (g/cm³)")
+    organic_matter_pct: float = Field(..., description="Organic Matter (%)")
+    cation_exchange_capacity: float = Field(..., description="CEC (meq/100g)")
+    salinity_ec: float = Field(..., description="Salinity (dS/m)")
+    buffering_capacity: float = Field(..., description="Buffering Capacity")
+    soil_moisture_pct: float = Field(..., description="Soil Moisture (%)")
+    soil_temp_c: float = Field(..., description="Soil Temperature (°C)")
+    air_temp_c: float = Field(..., description="Air Temperature (°C)")
+    light_intensity_par: float = Field(..., description="Light Intensity (PAR)")
+    soil_ph: float = Field(..., description="Soil pH")
+    moisture_regime: int = Field(..., ge=0, le=2, description="Moisture Regime")
+    thermal_regime: int = Field(..., ge=0, le=2, description="Thermal Regime")
+    nutrient_balance: float = Field(..., description="Nutrient Balance")
 
-# =========================
-# Request Schema
-# =========================
-class InputData(BaseModel):
-    bulk_density: float = Field(..., ge=0, le=3, description="Bulk density (g/cm³)")
-    organic_matter_pct: float = Field(..., ge=0, le=100, description="Organic matter (%)")
-    cation_exchange_capacity: float = Field(..., ge=0, le=100, description="CEC (meq/100g)")
-    salinity_ec: float = Field(..., ge=0, le=50, description="Salinity (dS/m)")
-    buffering_capacity: float = Field(..., ge=0, le=50, description="Buffering capacity")
-    soil_moisture_pct: float = Field(..., ge=0, le=100, description="Soil moisture (%)")
-    soil_temp_c: float = Field(..., ge=0, le=60, description="Soil temperature (°C)")
-    air_temp_c: float = Field(..., ge=0, le=60, description="Air temperature (°C)")
-    light_intensity_par: float = Field(..., ge=0, le=2000, description="Light intensity (PAR)")
-    soil_ph: float = Field(..., ge=0, le=14, description="Soil pH")
-    moisture_regime: int = Field(..., ge=0, le=2, description="Moisture regime: 0=Dry, 1=Moderate, 2=Wet")
-    thermal_regime: int = Field(..., ge=0, le=2, description="Thermal regime: 0=Cold, 1=Temperate, 2=Hot")
-    nutrient_balance: float = Field(..., ge=-100, le=100, description="Nutrient balance")
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "bulk_density": 1.20,
-                "organic_matter_pct": 5.00,
-                "cation_exchange_capacity": 10.00,
-                "salinity_ec": 1.00,
-                "buffering_capacity": 5.00,
-                "soil_moisture_pct": 30.00,
-                "soil_temp_c": 25.00,
-                "air_temp_c": 28.00,
-                "light_intensity_par": 800.00,
-                "soil_ph": 6.50,
-                "moisture_regime": 0,
-                "thermal_regime": 1,
-                "nutrient_balance": 0.00
-            }
-        }
-
-# =========================
-# Response Schema
-# =========================
-class PredictionResponse(BaseModel):
-    prediction: int
-    interpretation: str
-    confidence: Optional[float] = None
-    timestamp: str
-    input_summary: Dict[str, Any]
-
-# =========================
-# Root Endpoint
-# =========================
-@app.get("/")
-def root():
-    return {
-        "message": "🌾 Agro Predictor API is running",
-        "status": "active",
-        "model_loaded": model is not None,
-        "endpoints": {
-            "predict": "/predict (POST)",
-            "health": "/health (GET)",
-            "docs": "/docs (GET)"
-        }
-    }
-
-# =========================
-# Health Check
-# =========================
+# 7. Endpoint Health Check
 @app.get("/health")
 def health_check():
     return {
-        "status": "healthy",
+        "status": "healthy" if model is not None else "model_not_loaded",
         "model_loaded": model is not None,
         "timestamp": datetime.now().isoformat()
     }
 
-# =========================
-# Predict Endpoint
-# =========================
-@app.post("/predict", response_model=PredictionResponse)
-def predict(data: InputData):
-    """
-    Predict whether the soil conditions are suitable for planting.
-    Returns 1 for Suitable, 0 for Not Suitable.
-    """
+# 8. Endpoint Root
+@app.get("/")
+def home():
+    return {
+        "status": "Online",
+        "timestamp": datetime.now().isoformat(),
+        "model_info": {
+            "loaded": model is not None,
+            "features": len(feature_names) if feature_names is not None else 0
+        }
+    }
+
+# 9. Endpoint Prediksi Utama
+@app.post("/predict")
+def predict(request: PredictRequest):
+    if model is None or scaler is None:
+        raise HTTPException(status_code=503, detail="Model atau Scaler belum dimuat")
     
     try:
-        # Log request
-        print(f"📊 Prediction request received at {datetime.now()}")
-        print(f"   Input: {data.model_dump()}")
+        # a. Konversi input ke DataFrame
+        input_data = {
+            'bulk_density': request.bulk_density,
+            'organic_matter_pct': request.organic_matter_pct,
+            'cation_exchange_capacity': request.cation_exchange_capacity,
+            'salinity_ec': request.salinity_ec,
+            'buffering_capacity': request.buffering_capacity,
+            'soil_moisture_pct': request.soil_moisture_pct,
+            'soil_temp_c': request.soil_temp_c,
+            'air_temp_c': request.air_temp_c,
+            'light_intensity_par': request.light_intensity_par,
+            'soil_ph': request.soil_ph,
+            'moisture_regime': request.moisture_regime,
+            'thermal_regime': request.thermal_regime,
+            'nutrient_balance': request.nutrient_balance
+        }
         
-        # Urutan HARUS sama seperti training model
-        input_array = np.array([[
-            data.bulk_density,
-            data.organic_matter_pct,
-            data.cation_exchange_capacity,
-            data.salinity_ec,
-            data.buffering_capacity,
-            data.soil_moisture_pct,
-            data.soil_temp_c,
-            data.air_temp_c,
-            data.light_intensity_par,
-            data.soil_ph,
-            data.moisture_regime,
-            data.thermal_regime,
-            data.nutrient_balance
-        ]])
+        df_input = pd.DataFrame([input_data])
         
+        # b. Feature alignment
+        for col in feature_names:
+            if col not in df_input.columns:
+                df_input[col] = 0
+        
+        df_input = df_input[feature_names]
+        
+        # c. Scaling
+        scaled_data = scaler.transform(df_input)
+        
+        # d. Prediksi
+        prediction_raw = model.predict(scaled_data)[0]
+        prediction = int(prediction_raw)
+        
+        # e. Probabilitas
         confidence = None
+        if hasattr(model, "predict_proba"):
+            probs = model.predict_proba(scaled_data)[0]
+            confidence = float(np.max(probs))
         
-        # =========================
-        # Model Prediction
-        # =========================
-        if model is not None:
-            # Jika model adalah classifier dengan predict_proba
-            if hasattr(model, 'predict_proba'):
-                pred_proba = model.predict_proba(input_array)[0]
-                pred = model.predict(input_array)[0]
-                confidence = float(max(pred_proba))
+        # f. INTERPRETASI HASIL - AUTO DETECT
+        # Deteksi apakah model menggunakan 1=Tumbuh atau 1=Gagal
+        if hasattr(model, "classes_"):
+            # Jika class 1 adalah 1, maka prediction=1 berarti Tumbuh
+            if model.classes_[1] == 1:
+                is_success = (prediction == 1)
             else:
-                pred = model.predict(input_array)[0]
+                is_success = (prediction == 0)
         else:
-            # =========================
-            # Dummy Model Logic
-            # =========================
-            # Bobot untuk setiap parameter (contoh sederhana)
-            weights = {
-                'soil_moisture': 0.15,
-                'organic_matter': 0.12,
-                'ph': 0.10,
-                'temperature': 0.10,
-                'cec': 0.08,
-                'light': 0.08,
-                'nutrient': 0.12,
-                'moisture_regime': 0.10,
-                'thermal_regime': 0.10,
-                'bulk_density': -0.05,
-                'salinity': -0.15,
-                'buffering': 0.05
-            }
-            
-            # Hitung skor
-            score = 0
-            score += data.soil_moisture_pct * weights['soil_moisture']
-            score += data.organic_matter_pct * weights['organic_matter']
-            score += (7.0 - abs(data.soil_ph - 6.5)) * 10 * weights['ph']
-            score += data.air_temp_c * weights['temperature']
-            score += data.cation_exchange_capacity * weights['cec']
-            score += (data.light_intensity_par / 2000) * 100 * weights['light']
-            score += data.nutrient_balance * weights['nutrient']
-            score += (data.moisture_regime + 1) * 15 * weights['moisture_regime']
-            score += (data.thermal_regime + 1) * 10 * weights['thermal_regime']
-            score -= data.bulk_density * 20 * abs(weights['bulk_density'])
-            score -= data.salinity_ec * 5 * abs(weights['salinity'])
-            score += data.buffering_capacity * weights['buffering']
-            
-            # Normalisasi skor ke range 0-100
-            score = max(0, min(100, score))
-            
-            # Threshold untuk klasifikasi
-            pred = 1 if score > 45 else 0
-            confidence = score / 100 if pred == 1 else (100 - score) / 100
+            # Default: asumsikan 1 = Tumbuh
+            is_success = (prediction == 1)
         
-        # =========================
-        # Response
-        # =========================
-        response = PredictionResponse(
-            prediction=int(pred),
-            interpretation="Suitable" if pred == 1 else "Not Suitable",
-            confidence=round(confidence, 3) if confidence else None,
-            timestamp=datetime.now().isoformat(),
-            input_summary={
-                "soil_moisture": f"{data.soil_moisture_pct}%",
-                "organic_matter": f"{data.organic_matter_pct}%",
-                "soil_ph": data.soil_ph,
-                "salinity": f"{data.salinity_ec} dS/m",
-                "temperature": f"{data.air_temp_c}°C"
-            }
-        )
+        # Set hasil berdasarkan auto-detection
+        if is_success:
+            result_text = "Tumbuh"
+            result_en = "Suitable"
+            color_code = "#28A745"
+        else:
+            result_text = "Gagal"
+            result_en = "Not Suitable"
+            color_code = "#FF4B4B"
         
-        print(f"✅ Prediction result: {response.interpretation} (confidence: {response.confidence})")
-        return response
+        print(f"🎯 Prediction: {prediction} -> {result_text} (conf: {confidence:.2%})")
+        
+        return {
+            "prediction": prediction,
+            "result": result_text,
+            "result_en": result_en,
+            "confidence": round(confidence, 4) if confidence else None,
+            "color": color_code,
+            "timestamp": datetime.now().isoformat()
+        }
         
     except Exception as e:
-        print(f"❌ Prediction error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+        print(f"❌ Prediction Error: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
 
-# =========================
-# Batch Prediction (Optional)
-# =========================
-@app.post("/predict/batch")
-def predict_batch(data_list: list[InputData]):
-    """Batch prediction for multiple inputs"""
-    results = []
-    for data in data_list:
-        try:
-            input_array = np.array([[
-                data.bulk_density,
-                data.organic_matter_pct,
-                data.cation_exchange_capacity,
-                data.salinity_ec,
-                data.buffering_capacity,
-                data.soil_moisture_pct,
-                data.soil_temp_c,
-                data.air_temp_c,
-                data.light_intensity_par,
-                data.soil_ph,
-                data.moisture_regime,
-                data.thermal_regime,
-                data.nutrient_balance
-            ]])
-            
-            if model is not None:
-                pred = model.predict(input_array)[0]
-            else:
-                score = data.soil_moisture_pct + data.organic_matter_pct - data.salinity_ec + data.nutrient_balance
-                pred = 1 if score > 20 else 0
-            
-            results.append({"prediction": int(pred), "interpretation": "Suitable" if pred == 1 else "Not Suitable"})
-        except Exception as e:
-            results.append({"error": str(e)})
-    
-    return {"results": results, "total": len(results)}
-
-# =========================
-# Run Server (Development)
-# =========================
+# 10. Jalankan Server
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
