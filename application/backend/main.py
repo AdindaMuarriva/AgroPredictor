@@ -89,7 +89,7 @@ class PredictRequest(BaseModel):
     soil_ph: float = Field(..., description="Soil pH")
     moisture_regime: int = Field(..., ge=0, le=2, description="Moisture Regime")
     thermal_regime: int = Field(..., ge=0, le=2, description="Thermal Regime")
-    nutrient_balance: float = Field(..., description="Nutrient Balance")
+    nutrient_balance: int = Field(..., ge=0, le=2, description="Nutrient Balance")
 
 # 7. Endpoint Health Check
 @app.get("/health")

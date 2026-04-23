@@ -13,9 +13,54 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-#MainMenu,footer,header,[data-testid="stToolbar"]{visibility:hidden;display:none}
-.main .block-container{padding:0!important;max-width:100%!important}
-[data-testid="stSidebar"]{display:none}
+/* Sembunyikan elemen bawaan Streamlit (header, footer, menu) */
+#MainMenu, footer, header, [data-testid="stToolbar"], [data-testid="stDecoration"] {visibility: hidden !important; display: none !important;}
+
+/* Hilangkan padding dan margin pada container utama Streamlit agar memenuhi layar */
+.block-container, [data-testid="block-container"] {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+    width: 100% !important;
+}
+
+/* Pastikan app view menghapus padding/margin. Samakan warna background dengan HTML UI(--dark) */
+[data-testid="stAppViewContainer"], .main {
+    background-color: #1C2B0E !important; 
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+[data-testid="stAppViewContainer"] > section {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+}
+
+/* Hilangkan jarak/margin pada elemen-elemen di dalam blok stVerticalBlock pembawa iframe */
+[data-testid="stVerticalBlock"], [data-testid="stVerticalBlockBorderWrapper"] {
+    gap: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+}
+
+[data-testid="stVerticalBlock"] > div {
+    padding: 0 !important;
+    max-width: none !important;
+    width: 100% !important;
+}
+
+/* Sidebar bawaan Streamlit dimatikan */
+[data-testid="stSidebar"] {display: none !important;}
+
+/* Jadikan iframe mengembang semaksimal mungkin */
+iframe {
+    width: 100% !important;
+    height: 100vh !important;
+    display: block !important;
+    border: none !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -24,10 +69,10 @@ try:
     health_response = requests.get("http://127.0.0.1:8000/health", timeout=2)
     backend_status = "connected" if health_response.status_code == 200 else "error"
     if backend_status == "connected":
-        st.success("✅ Backend terhubung!")
+        st.toast("Backend terhubung dan siap digunakan!", icon="✅")
 except:
     backend_status = "disconnected"
-    st.warning("⚠️ Backend server not detected. Make sure to run: uvicorn main:app --reload")
+    st.error("⚠️ Backend server belum berjalan. Jalankan: uvicorn main:app --reload di folder backend.")
 
 # HTML content yang sudah diperbaiki
 HTML_CONTENT = """
@@ -72,8 +117,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);height:100vh;overfl
 .nav-line{width:2px;height:20px;background:#2A3D18;margin-left:24px;transition:background .3s}
 .nav-line.done-line{background:rgba(124,181,24,.35)}
 .sidebar-bottom{margin-top:auto;padding-top:1.25rem}
-.save-link{font-size:13px;color:rgba(255,255,255,.25);cursor:pointer;text-decoration:underline;text-underline-offset:3px;transition:color .2s}
-.save-link:hover{color:rgba(255,255,255,.5)}
+.save-link{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:rgba(255,255,255,.6);cursor:pointer;text-decoration:none;padding:10px 18px;border:1.5px solid rgba(255,255,255,.12);border-radius:40px;transition:all .3s;background:rgba(255,255,255,.03);letter-spacing:0.02em}
+.save-link:hover{color:#fff;border-color:var(--accent);background:rgba(124,181,24,.15);transform:translateY(-1px)}
 .sidebar.landing-mode .nav-steps{opacity:.3;pointer-events:none}
 
 /* CONTENT */
@@ -194,7 +239,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);height:100vh;overfl
       <div class="nav-item" id="nav3"><div class="nav-dot" id="dot3">4</div><div class="nav-label">Confirm & Predict</div></div>
     </div>
     <div class="sidebar-bottom">
-      <span class="save-link" onclick="saveToLocal()">💾 Save and exit</span>
+      <div class="save-link" onclick="saveToLocal()" title="Simpan draft ke browser">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+        Simpan Draft
+      </div>
     </div>
   </div>
 
@@ -284,9 +332,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);height:100vh;overfl
         <div class="page-title">Additional Factors</div>
         <div class="page-sub">Parameter tambahan untuk akurasi prediksi yang lebih baik</div>
         <div class="grid2">
-          <div class="field span2"><label>Moisture Regime</label><div class="seg-group"><button class="seg on" id="mr0" onclick="setSeg('mr',0)">Dry</button><button class="seg" id="mr1" onclick="setSeg('mr',1)">Moderate</button><button class="seg" id="mr2" onclick="setSeg('mr',2)">Wet</button></div></div>
-          <div class="field span2"><label>Thermal Regime</label><div class="seg-group"><button class="seg" id="tr0" onclick="setSeg('tr',0)">Cold</button><button class="seg on" id="tr1" onclick="setSeg('tr',1)">Temperate</button><button class="seg" id="tr2" onclick="setSeg('tr',2)">Hot</button></div></div>
-          <div class="field span2"><label>Nutrient Balance</label><div class="input-wrap"><input type="number" id="f-nb" value="0.00" min="-100" max="100" step="5"></div></div>
+          <div class="field span2"><label>Moisture Regime</label><div class="seg-group"><button class="seg on" id="mr0" onclick="setSeg('mr',0)">Dry</button><button class="seg" id="mr1" onclick="setSeg('mr',1)">Optimal</button><button class="seg" id="mr2" onclick="setSeg('mr',2)">Waterlogged</button></div></div>
+          <div class="field span2"><label>Thermal Regime</label><div class="seg-group"><button class="seg" id="tr0" onclick="setSeg('tr',0)">Cold</button><button class="seg" id="tr1" onclick="setSeg('tr',1)">Heat Stress</button><button class="seg on" id="tr2" onclick="setSeg('tr',2)">Optimal</button></div></div>
+          <div class="field span2"><label>Nutrient Balance</label><div class="seg-group"><button class="seg" id="nb0" onclick="setSeg('nb',0)">Deficient</button><button class="seg" id="nb1" onclick="setSeg('nb',1)">Excessive</button><button class="seg on" id="nb2" onclick="setSeg('nb',2)">Optimal</button></div></div>
         </div>
       </div>
       <div class="page-nav">
@@ -321,7 +369,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);height:100vh;overfl
 </div>
 
 <script>
-var segs = {mr: 0, tr: 1};
+var segs = {mr: 0, tr: 2, nb: 2};
 var cur = 'landing';
 var API_URL = 'http://127.0.0.1:8000/predict';
 
@@ -372,8 +420,9 @@ function gv(id) {
 }
 
 function fillReview() {
-  var mr = ['Dry', 'Moderate', 'Wet'];
-  var tr = ['Cold', 'Temperate', 'Hot'];
+  var mr = ['Dry', 'Optimal', 'Waterlogged'];
+  var tr = ['Cold', 'Heat Stress', 'Optimal'];
+  var nb = ['Deficient', 'Excessive', 'Optimal'];
   var html = `
     <div class="review-section">
       <div class="review-section-title">Soil Properties</div>
@@ -400,7 +449,7 @@ function fillReview() {
       <div class="review-grid">
         <div class="review-item"><div class="review-key">Moisture Regime</div><div class="review-val">${mr[segs.mr]}</div></div>
         <div class="review-item"><div class="review-key">Thermal Regime</div><div class="review-val">${tr[segs.tr]}</div></div>
-        <div class="review-item"><div class="review-key">Nutrient Balance</div><div class="review-val">${gv('f-nb').toFixed(1)}</div></div>
+        <div class="review-item"><div class="review-key">Nutrient Balance</div><div class="review-val">${nb[segs.nb]}</div></div>
       </div>
     </div>
   `;
@@ -412,13 +461,14 @@ function resetAll() {
   var d = {
     'f-bd': '1.20', 'f-sal': '1.00', 'f-om': '5.00', 'f-buf': '5.00',
     'f-cec': '10.00', 'f-sm': '30.00', 'f-li': '800', 'f-st': '25.00',
-    'f-ph': '6.50', 'f-at': '28.00', 'f-nb': '0.00'
+    'f-ph': '6.50', 'f-at': '28.00'
   };
   Object.keys(d).forEach(function(id) {
     document.getElementById(id).value = d[id];
   });
   setSeg('mr', 0);
-  setSeg('tr', 1);
+  setSeg('tr', 2);
+  setSeg('nb', 2);
   document.getElementById('result-area').innerHTML = '';
   document.getElementById('pred-label').textContent = 'Jalankan Prediksi';
   document.getElementById('pred-btn').disabled = false;
@@ -443,7 +493,7 @@ function saveToLocal() {
     soil_ph: gv('f-ph'),
     moisture_regime: segs.mr,
     thermal_regime: segs.tr,
-    nutrient_balance: gv('f-nb')
+    nutrient_balance: segs.nb
   };
   try {
     localStorage.setItem('agro_data', JSON.stringify(data));
@@ -461,14 +511,14 @@ window.addEventListener('load', function() {
         'f-cec': 'cation_exchange_capacity', 'f-sal': 'salinity_ec',
         'f-buf': 'buffering_capacity', 'f-sm': 'soil_moisture_pct',
         'f-st': 'soil_temp_c', 'f-at': 'air_temp_c',
-        'f-li': 'light_intensity_par', 'f-ph': 'soil_ph',
-        'f-nb': 'nutrient_balance'
+        'f-li': 'light_intensity_par', 'f-ph': 'soil_ph'
       };
       Object.keys(map).forEach(function(id) {
         if (d[map[id]] !== undefined) document.getElementById(id).value = d[map[id]];
       });
       if (d.moisture_regime !== undefined) setSeg('mr', d.moisture_regime);
       if (d.thermal_regime !== undefined) setSeg('tr', d.thermal_regime);
+      if (d.nutrient_balance !== undefined) setSeg('nb', d.nutrient_balance);
     }
   } catch(e) {}
 });
@@ -494,7 +544,7 @@ async function runPredict() {
     soil_ph: gv('f-ph'),
     moisture_regime: segs.mr,
     thermal_regime: segs.tr,
-    nutrient_balance: gv('f-nb')
+    nutrient_balance: segs.nb
   };
   
   // DEBUG: Tampilkan payload di console browser
